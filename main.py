@@ -5,6 +5,9 @@ import geemap
 import ee
 import json
 import time
+from PIL import Image
+from io import BytesIO
+import requests
 
 # Initialize Earth Engine
 ee.Initialize()
@@ -63,6 +66,16 @@ if st.button("Search Available Imagery"):
 
             # Define the AOI
             aoi_geom = ee.Geometry.Rectangle([min_lon, min_lat, max_lon, max_lat])
+            st.session_state["aoi_geom"] = aoi_geom  # Save AOI for later use
+
+            # Progress bar
+            st.info("Searching for available imagery...")
+            progress = st.progress(0)
+
+            # Simulate progress
+            for i in range(1, 6):
+                time.sleep(0.2)  # Simulate delay
+                progress.progress(i * 20)
 
             # Fetch available Sentinel-2 imagery within the date range
             if start_date and end_date:
@@ -73,16 +86,12 @@ if st.button("Search Available Imagery"):
                 # Get list of available image IDs and dates
                 available_imagery = image_collection.toList(image_collection.size()).getInfo()
                 image_list = [
-                    {"id": img["id"], "date": img["properties"]["system:time_start"]}
+                    {"id": img["id"], "date": time.strftime('%Y-%m-%d', time.gmtime(img["properties"]["system:time_start"] / 1000))}
                     for img in available_imagery
                 ]
-                
-                # Convert timestamp to human-readable dates
-                for img in image_list:
-                    img["date"] = time.strftime('%Y-%m-%d', time.gmtime(img["date"] / 1000))
-                
-                # Display available imagery
                 st.session_state["imagery_options"] = image_list
+                st.session_state["current_page"] = 1
+                st.success("Imagery search complete!")
             else:
                 st.error("Please select a valid date range.")
         else:
@@ -90,53 +99,81 @@ if st.button("Search Available Imagery"):
     except Exception as e:
         st.error(f"Error fetching imagery: {e}")
 
-# Display the available imagery as a selectable list
-if "imagery_options" in st.session_state:
+# Pagination controls and imagery preview
+if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
     imagery_options = st.session_state["imagery_options"]
-    if imagery_options:
-        st.sidebar.write("Select imagery to load on the map:")
-        selected_imagery = st.sidebar.radio(
-            "Available Imagery",
-            options=[f"{img['id']} ({img['date']})" for img in imagery_options]
-        )
-        
-        if st.sidebar.button("Load Selected Imagery"):
-            try:
-                # Load the selected imagery
-                selected_id = selected_imagery.split(" (")[0]
-                selected_image = ee.Image(selected_id)
+    aoi_geom = st.session_state["aoi_geom"]
+    page_size = 10
+    total_pages = (len(imagery_options) - 1) // page_size + 1
+    current_page = st.session_state["current_page"]
 
-                # Visualization parameters
-                vis_params = {
-                    "bands": ["B4", "B3", "B2"],
-                    "min": 0,
-                    "max": 3000,
-                    "gamma": 1.4,
-                }
+    # Pagination navigation
+    col1, col2, col3 = st.columns([1, 2, 1])
+    if current_page > 1:
+        if col1.button("Previous"):
+            st.session_state["current_page"] -= 1
+    if current_page < total_pages:
+        if col3.button("Next"):
+            st.session_state["current_page"] += 1
 
-                # Add the selected imagery to the map
-                def add_ee_layer(self, ee_object, vis_params, name):
-                    map_id_dict = ee.Image(ee_object).getMapId(vis_params)
-                    folium.raster_layers.TileLayer(
-                        tiles=map_id_dict["tile_fetcher"].url_format,
-                        attr="Map Data © Google Earth Engine",
-                        name=name,
-                        overlay=True,
-                        control=True,
-                    ).add_to(self)
+    # Display imagery for the current page
+    start_idx = (current_page - 1) * page_size
+    end_idx = min(start_idx + page_size, len(imagery_options))
+    current_imagery = imagery_options[start_idx:end_idx]
 
-                folium.Map.add_ee_layer = add_ee_layer
-                folium_map.add_ee_layer(selected_image, vis_params, "Selected Sentinel-2 Imagery")
+    for img in current_imagery:
+        with st.container():
+            col1, col2 = st.columns([1, 3])
+            col1.write(f"ID: {img['id']}")
+            col1.write(f"Date: {img['date']}")
+            
+            # Generate a thumbnail for the imagery
+            image = ee.Image(img["id"])
+            thumbnail_url = image.getThumbURL({
+                "region": aoi_geom.getInfo(),
+                "bands": ["B4", "B3", "B2"],
+                "min": 0,
+                "max": 3000,
+                "dimensions": "200x200",
+            })
 
-                # Update session state with the updated map
-                st.session_state["folium_map"] = folium_map
-                st.success("Imagery loaded successfully!")
-            except Exception as e:
-                st.error(f"Error loading selected imagery: {e}")
-    else:
-        st.sidebar.write("No imagery found for the selected date range.")
-else:
-    st.sidebar.write("Search for available imagery to see options.")
+            # Fetch and display the thumbnail
+            response = requests.get(thumbnail_url)
+            if response.status_code == 200:
+                thumbnail_response = BytesIO(response.content)
+                thumbnail = Image.open(thumbnail_response)
+                col2.image(thumbnail, caption="Preview")
+            else:
+                col2.error("Failed to load preview.")
+
+            if st.button(f"Load {img['id']}", key=img["id"]):
+                try:
+                    # Visualization parameters
+                    vis_params = {
+                        "bands": ["B4", "B3", "B2"],
+                        "min": 0,
+                        "max": 3000,
+                        "gamma": 1.4,
+                    }
+
+                    # Add the selected imagery to the map
+                    def add_ee_layer(self, ee_object, vis_params, name):
+                        map_id_dict = ee.Image(ee_object).getMapId(vis_params)
+                        folium.raster_layers.TileLayer(
+                            tiles=map_id_dict["tile_fetcher"].url_format,
+                            attr="Map Data © Google Earth Engine",
+                            name=name,
+                            overlay=True,
+                            control=True,
+                        ).add_to(self)
+
+                    folium.Map.add_ee_layer = add_ee_layer
+                    folium_map.add_ee_layer(image, vis_params, f"Imagery {img['id']}")
+
+                    st.session_state["folium_map"] = folium_map
+                    st.success("Imagery loaded successfully!")
+                except Exception as e:
+                    st.error(f"Error loading imagery: {e}")
 
 # Display the map again to persist the updates
 st_folium(st.session_state["folium_map"], width=700, height=500, key="updated_map")

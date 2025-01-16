@@ -146,7 +146,7 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
             else:
                 col2.error("Failed to load preview.")
 
-            if st.button(f"Load {img['id']}", key=img["id"]):
+            if st.button(f"Load {img['id']}", key=f"load_{img['id']}"):
                 try:
                     # Visualization parameters
                     vis_params = {
@@ -172,8 +172,22 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
 
                     st.session_state["folium_map"] = folium_map
                     st.success("Imagery loaded successfully!")
+
                 except Exception as e:
                     st.error(f"Error loading imagery: {e}")
 
-# Display the map again to persist the updates
-st_folium(st.session_state["folium_map"], width=700, height=500, key="updated_map")
+            # Add export option
+            if st.button(f"Export {img['id']}", key=f"export_{img['id']}"):
+                try:
+                    task = ee.batch.Export.image.toDrive(
+                        image=image,
+                        description=f"Export_{img['id']}",
+                        folder="GeoScope",
+                        fileNamePrefix=f"Image_{img['id']}",
+                        scale=10,
+                        region=aoi_geom.getInfo()["coordinates"],
+                    )
+                    task.start()
+                    st.success(f"Export task for {img['id']} started! Check your Google Drive.")
+                except Exception as e:
+                    st.error(f"Error starting export: {e}")

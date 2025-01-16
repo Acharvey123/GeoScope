@@ -39,23 +39,22 @@ if "draw_control_added" not in st.session_state:
 
 # Sidebar for instructions
 st.sidebar.title("Instructions")
-st.sidebar.write("Draw a rectangle on the map to define your area of interest and click 'Fetch Imagery'.")
+st.sidebar.write("Draw a rectangle on the map to define your area of interest.")
 
 # Display the map and capture the drawn data
 output = st_folium(folium_map, width=700, height=500, key="map")
 
-# Button to process the geometry and fetch imagery
-if st.button("Fetch Imagery"):
+# Date range selector
+st.sidebar.title("Date Range")
+start_date = st.sidebar.date_input("Start Date", value=None, key="start_date")
+end_date = st.sidebar.date_input("End Date", value=None, key="end_date")
+
+# Available imagery list
+available_imagery = []
+
+if st.button("Search Available Imagery"):
     try:
         if "all_drawings" in output and output["all_drawings"]:
-            st.info("Processing the selected area...")
-            progress = st.progress(0)
-
-            # Simulate a progress bar for user feedback
-            for i in range(1, 11):
-                time.sleep(0.3)  # Simulates processing time
-                progress.progress(i * 10)
-
             # Extract the rectangle GeoJSON
             drawn_geojson = output["all_drawings"][-1]
             coords = drawn_geojson["geometry"]["coordinates"][0]
@@ -65,42 +64,79 @@ if st.button("Fetch Imagery"):
             # Define the AOI
             aoi_geom = ee.Geometry.Rectangle([min_lon, min_lat, max_lon, max_lat])
 
-            # Fetch Sentinel-2 imagery
-            image = ee.ImageCollection("COPERNICUS/S2") \
-                .filterBounds(aoi_geom) \
-                .filterDate("2022-01-01", "2022-12-31") \
-                .median()
-
-            # Visualization parameters
-            vis_params = {
-                "bands": ["B4", "B3", "B2"],
-                "min": 0,
-                "max": 3000,
-                "gamma": 1.4,
-            }
-
-            # Add Earth Engine layers
-            def add_ee_layer(self, ee_object, vis_params, name):
-                map_id_dict = ee.Image(ee_object).getMapId(vis_params)
-                folium.raster_layers.TileLayer(
-                    tiles=map_id_dict["tile_fetcher"].url_format,
-                    attr="Map Data © Google Earth Engine",
-                    name=name,
-                    overlay=True,
-                    control=True,
-                ).add_to(self)
-
-            # Add the Earth Engine layer to the folium map
-            folium.Map.add_ee_layer = add_ee_layer
-            folium_map.add_ee_layer(image, vis_params, "Sentinel-2 Imagery")
-
-            # Update session state with the updated map
-            st.session_state["folium_map"] = folium_map
-            st.success("Imagery fetched successfully!")
+            # Fetch available Sentinel-2 imagery within the date range
+            if start_date and end_date:
+                image_collection = ee.ImageCollection("COPERNICUS/S2") \
+                    .filterBounds(aoi_geom) \
+                    .filterDate(str(start_date), str(end_date))
+                
+                # Get list of available image IDs and dates
+                available_imagery = image_collection.toList(image_collection.size()).getInfo()
+                image_list = [
+                    {"id": img["id"], "date": img["properties"]["system:time_start"]}
+                    for img in available_imagery
+                ]
+                
+                # Convert timestamp to human-readable dates
+                for img in image_list:
+                    img["date"] = time.strftime('%Y-%m-%d', time.gmtime(img["date"] / 1000))
+                
+                # Display available imagery
+                st.session_state["imagery_options"] = image_list
+            else:
+                st.error("Please select a valid date range.")
         else:
             st.error("No area of interest drawn. Please draw a rectangle on the map.")
     except Exception as e:
-        st.error(f"Error processing GeoJSON: {e}")
+        st.error(f"Error fetching imagery: {e}")
+
+# Display the available imagery as a selectable list
+if "imagery_options" in st.session_state:
+    imagery_options = st.session_state["imagery_options"]
+    if imagery_options:
+        st.sidebar.write("Select imagery to load on the map:")
+        selected_imagery = st.sidebar.radio(
+            "Available Imagery",
+            options=[f"{img['id']} ({img['date']})" for img in imagery_options]
+        )
+        
+        if st.sidebar.button("Load Selected Imagery"):
+            try:
+                # Load the selected imagery
+                selected_id = selected_imagery.split(" (")[0]
+                selected_image = ee.Image(selected_id)
+
+                # Visualization parameters
+                vis_params = {
+                    "bands": ["B4", "B3", "B2"],
+                    "min": 0,
+                    "max": 3000,
+                    "gamma": 1.4,
+                }
+
+                # Add the selected imagery to the map
+                def add_ee_layer(self, ee_object, vis_params, name):
+                    map_id_dict = ee.Image(ee_object).getMapId(vis_params)
+                    folium.raster_layers.TileLayer(
+                        tiles=map_id_dict["tile_fetcher"].url_format,
+                        attr="Map Data © Google Earth Engine",
+                        name=name,
+                        overlay=True,
+                        control=True,
+                    ).add_to(self)
+
+                folium.Map.add_ee_layer = add_ee_layer
+                folium_map.add_ee_layer(selected_image, vis_params, "Selected Sentinel-2 Imagery")
+
+                # Update session state with the updated map
+                st.session_state["folium_map"] = folium_map
+                st.success("Imagery loaded successfully!")
+            except Exception as e:
+                st.error(f"Error loading selected imagery: {e}")
+    else:
+        st.sidebar.write("No imagery found for the selected date range.")
+else:
+    st.sidebar.write("Search for available imagery to see options.")
 
 # Display the map again to persist the updates
 st_folium(st.session_state["folium_map"], width=700, height=500, key="updated_map")

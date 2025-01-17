@@ -17,7 +17,7 @@ if "folium_map" not in st.session_state:
 
 folium_map = st.session_state["folium_map"]
 
-# Add the ESRI Imagery basemap using a folium TileLayer (if not added)
+# Add the ESRI Imagery basemap using a folium TileLayer
 if "esri_layer_added" not in st.session_state:
     esri_tile_layer = folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -41,7 +41,7 @@ if "draw_control_added" not in st.session_state:
 
 # Sidebar for instructions
 st.sidebar.title("Instructions")
-st.sidebar.write("Draw a rectangle on the map to define your area of interest.")
+st.sidebar.write("Draw a rectangle on the map to define your area of interest. Next choose date range and imagery type. When finished browse results and load or export!")
 
 # Display the map and capture the drawn data
 output = st_folium(folium_map, width=700, height=500, key="map")
@@ -201,6 +201,7 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
             # Load imagery onto the map
             if st.button(f"Load {img['id']}", key=f"load_{img['id']}"):
                 try:
+                    # Add the selected imagery to the map
                     def add_ee_layer(self, ee_object, vis_params, name):
                         map_id_dict = ee.Image(ee_object).getMapId(vis_params)
                         folium.raster_layers.TileLayer(
@@ -216,7 +217,14 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
                         st.session_state["loaded_layers"] = set()
 
                     if img["id"] not in st.session_state["loaded_layers"]:
-                        folium_map.add_ee_layer(image, config["vis_params"], f"Imagery {img['id']}")
+                        # Add progress bar for imagery loading
+                        with st.spinner("Loading imagery..."):
+                            progress_bar = st.progress(0)
+                            time.sleep(0.5)  # Simulating delay for loading
+                            folium_map.add_ee_layer(image, config["vis_params"], f"Imagery {img['id']}")
+                            for progress in range(1, 11):
+                                progress_bar.progress(progress * 10)
+                                time.sleep(0.1)  # Simulate progress
                         st.session_state["loaded_layers"].add(img["id"])
 
                     st.session_state["folium_map"] = folium_map
@@ -237,6 +245,15 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
                         maxPixels=1e13,
                     )
                     task.start()
+
+                    # Add progress bar for export
+                    st.info("Exporting imagery... this may take a while.")
+                    progress_bar = st.progress(0)
+                    for progress in range(1, 11):
+                        progress_bar.progress(progress * 10)
+                        time.sleep(1)  # Simulate export progress
+
                     st.success(f"Export task for {img['id']} started! Check your Google Drive.")
                 except Exception as e:
                     st.error(f"Error starting export: {e}")
+

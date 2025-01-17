@@ -7,37 +7,56 @@ import time
 from PIL import Image
 from io import BytesIO
 import requests
+from folium.plugins import Draw
 
 # Initialize Earth Engine
 ee.Initialize()
 
-# Create a folium Map object
+from folium.plugins import Draw
+
+# Initialize map in session state
 if "folium_map" not in st.session_state:
     st.session_state["folium_map"] = folium.Map(location=[37.5, -94.5], zoom_start=6)
 
 folium_map = st.session_state["folium_map"]
 
-# Add the ESRI Imagery basemap using a folium TileLayer
-if "esri_layer_added" not in st.session_state:
-    esri_tile_layer = folium.TileLayer(
-        tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
-        name="ESRI Imagery",
-        overlay=True,
-        control=True,
-    )
-    esri_tile_layer.add_to(folium_map)
-    st.session_state["esri_layer_added"] = True
+# Define base maps
+base_maps = {
+    "OpenStreetMap": "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "ESRI Imagery": "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+}
 
-# Add the Draw control to the folium map (rectangle only)
-if "draw_control_added" not in st.session_state:
-    from folium.plugins import Draw
+# Add sidebar toggle for base maps
+selected_base_map = st.sidebar.radio(
+    "Select Base Map",
+    options=list(base_maps.keys()),
+    index=0,
+)
 
+# Update the map with the selected base map
+if "current_base_map" not in st.session_state or st.session_state["current_base_map"] != selected_base_map:
+    # Clear all layers and reset the map
+    st.session_state["folium_map"] = folium.Map(location=[37.5, -94.5], zoom_start=6)
+
+    # Add the selected base map
+    folium.TileLayer(
+        tiles=base_maps[selected_base_map],
+        name=selected_base_map,
+        attr=f"Tiles &copy; {selected_base_map}",
+        overlay=False,
+        control=False,
+    ).add_to(st.session_state["folium_map"])
+
+    # Add the Draw Control
     draw_control = Draw(
         draw_options={"rectangle": True, "polygon": False, "circle": False, "marker": False}
     )
-    draw_control.add_to(folium_map)
-    st.session_state["draw_control_added"] = True
+    draw_control.add_to(st.session_state["folium_map"])
+
+    # Save the current base map selection
+    st.session_state["current_base_map"] = selected_base_map
+
+folium_map = st.session_state["folium_map"]
 
 # Sidebar for instructions
 st.sidebar.title("Instructions")
@@ -77,7 +96,13 @@ else:
     st.sidebar.info("No imagery currently loaded.")
 
 # Display the map and capture the drawn data
-output = st_folium(folium_map, width=700, height=500, key="map")
+output = st_folium(
+    folium_map,
+    width=850,  # Adjust width to fit your layout
+    height=650,  # Increase height to accommodate the LayerControl widget
+    key="map",
+)
+
 
 # Sidebar for date range and sensor selection
 st.sidebar.title("Date Range and Sensor Selection")
@@ -260,10 +285,14 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
                                 time.sleep(0.1)  # Simulate progress
                         st.session_state["loaded_layers"].add(img["id"])
 
+                    # Explicitly update the map session state
                     st.session_state["folium_map"] = folium_map
                     st.success(f"Imagery {img['id']} loaded onto the map!")
                 except Exception as e:
                     st.error(f"Error loading imagery: {e}")
+
+
+
 
             # Export imagery
             if st.button(f"Export {img['id']}", key=f"export_{img['id']}"):

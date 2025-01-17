@@ -78,7 +78,11 @@ streamlit run main.py
 
 - Open the app in your web browser (the terminal will provide a local URL).
 - Use the drawing tools to define your area of interest on the map.
-- Click the "Fetch Imagery" button to retrieve and display satellite imagery for the selected area.
+- Select date range you need imagery for, and the sensor you want to search for.
+- Click the "Search Available Imagery" button to retrieve and display satellite imagery for the selected area.
+- Browse through available imagery and select "Load Image" to view on map.
+- If satisfied, you can export the image to your Google Drive with the "Export" button. This may take a few minutes to show up in your drive, especially for large images.
+- To restart your search, you can click the "New Search" button.
 
 ### 7. Deactivate the Virtual Environment
 

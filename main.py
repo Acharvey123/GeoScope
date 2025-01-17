@@ -43,6 +43,39 @@ if "draw_control_added" not in st.session_state:
 st.sidebar.title("Instructions")
 st.sidebar.write("Draw a rectangle on the map to define your area of interest. Next choose date range and imagery type. When finished browse results and load or export!")
 
+# Sidebar for currently loaded imagery
+st.sidebar.title("Currently Loaded Imagery")
+
+if "loaded_layers" in st.session_state and st.session_state["loaded_layers"]:
+    for loaded_id in st.session_state["loaded_layers"]:
+        with st.sidebar.expander(f"Imagery: {loaded_id}", expanded=True):
+            st.write(f"ID: {loaded_id}")
+
+            # Option to export imagery from this sidebar
+            if st.button(f"Export {loaded_id}", key=f"sidebar_export_{loaded_id}"):
+                try:
+                    image = ee.Image(loaded_id)
+                    config = st.session_state["sensor_config"]
+                    aoi_geom = st.session_state["aoi_geom"]
+                    
+                    # Start export task
+                    task = ee.batch.Export.image.toDrive(
+                        image=image,
+                        description=f"Export_{loaded_id.replace('/', '_')[:100]}",
+                        folder="GeoScope",
+                        fileNamePrefix=f"Image_{loaded_id.replace('/', '_')[:100]}",
+                        scale=config["scale"],
+                        region=aoi_geom.getInfo()["coordinates"],
+                        maxPixels=1e13,
+                    )
+                    task.start()
+
+                    st.sidebar.success(f"Export task for {loaded_id} started! Check your Google Drive.")
+                except Exception as e:
+                    st.sidebar.error(f"Error exporting {loaded_id}: {e}")
+else:
+    st.sidebar.info("No imagery currently loaded.")
+
 # Display the map and capture the drawn data
 output = st_folium(folium_map, width=700, height=500, key="map")
 

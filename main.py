@@ -3,7 +3,6 @@ import folium
 from streamlit_folium import st_folium
 import geemap
 import ee
-import json
 import time
 from PIL import Image
 from io import BytesIO
@@ -22,7 +21,7 @@ folium_map = st.session_state["folium_map"]
 if "esri_layer_added" not in st.session_state:
     esri_tile_layer = folium.TileLayer(
         tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
-        attr="Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
+        attr="Tiles &copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community",
         name="ESRI Imagery",
         overlay=True,
         control=True,
@@ -47,10 +46,57 @@ st.sidebar.write("Draw a rectangle on the map to define your area of interest.")
 # Display the map and capture the drawn data
 output = st_folium(folium_map, width=700, height=500, key="map")
 
-# Date range selector
-st.sidebar.title("Date Range")
+# Sidebar for date range and sensor selection
+st.sidebar.title("Date Range and Sensor Selection")
 start_date = st.sidebar.date_input("Start Date", value=None, key="start_date")
 end_date = st.sidebar.date_input("End Date", value=None, key="end_date")
+
+sensor = st.sidebar.selectbox(
+    "Choose a Sensor",
+    ["Sentinel-2", "Landsat", "MODIS", "NAIP", "Sentinel-1"],
+    index=0,
+)
+
+# Sensor-specific configurations
+sensor_config = {
+    "Sentinel-2": {
+        "collection": "COPERNICUS/S2",
+        "bands": ["B4", "B3", "B2"],
+        "scale": 10,
+        "vis_params": {"bands": ["B4", "B3", "B2"], "min": 0, "max": 3000, "gamma": 1.4},
+    },
+    "Landsat": {
+        "collection": "LANDSAT/LC08/C02/T1_L2",
+        "bands": ["SR_B4", "SR_B3", "SR_B2"],
+        "scale": 30,
+        "vis_params": {"bands": ["SR_B4", "SR_B3", "SR_B2"], "min": 0, "max": 3000, "gamma": 1.4},
+    },
+    "MODIS": {
+        "collection": "MODIS/006/MOD13A2",
+        "bands": ["NDVI"],
+        "scale": 250,
+        "vis_params": {"bands": ["NDVI"], "min": 0, "max": 8000, "palette": ["blue", "green", "red"]},
+    },
+    "NAIP": {
+        "collection": "USDA/NAIP/DOQQ",
+        "bands": ["R", "G", "B"],
+        "scale": 1,
+        "vis_params": {"bands": ["R", "G", "B"], "min": 0, "max": 255},
+    },
+    "Sentinel-1": {
+        "collection": "COPERNICUS/S1",
+        "bands": ["VV"],
+        "scale": 10,
+        "vis_params": {"bands": ["VV"], "min": -25, "max": 0},
+    },
+}
+
+# New Search Feature
+if st.sidebar.button("New Search"):
+    # Reset session state
+    st.session_state.clear()
+    st.session_state["folium_map"] = folium.Map(location=[37.5, -94.5], zoom_start=6)
+    st.experimental_rerun()
 
 # Available imagery list
 available_imagery = []
@@ -77,23 +123,28 @@ if st.button("Search Available Imagery"):
                 time.sleep(0.2)  # Simulate delay
                 progress.progress(i * 20)
 
-            # Fetch available Sentinel-2 imagery within the date range
-            if start_date and end_date:
-                image_collection = ee.ImageCollection("COPERNICUS/S2") \
-                    .filterBounds(aoi_geom) \
-                    .filterDate(str(start_date), str(end_date))
-                
+            # Fetch imagery based on the selected sensor
+            config = sensor_config[sensor]
+            image_collection = ee.ImageCollection(config["collection"]) \
+                .filterBounds(aoi_geom) \
+                .filterDate(str(start_date), str(end_date)) \
+                .select(config["bands"])
+            
+            # Check if the collection is empty
+            collection_size = image_collection.size().getInfo()
+            if collection_size == 0:
+                st.warning("No imagery found for the selected AOI, date range, and sensor. Please try another combination.")
+            else:
                 # Get list of available image IDs and dates
-                available_imagery = image_collection.toList(image_collection.size()).getInfo()
+                available_imagery = image_collection.toList(collection_size).getInfo()
                 image_list = [
                     {"id": img["id"], "date": time.strftime('%Y-%m-%d', time.gmtime(img["properties"]["system:time_start"] / 1000))}
                     for img in available_imagery
                 ]
                 st.session_state["imagery_options"] = image_list
                 st.session_state["current_page"] = 1
+                st.session_state["sensor_config"] = config
                 st.success("Imagery search complete!")
-            else:
-                st.error("Please select a valid date range.")
         else:
             st.error("No area of interest drawn. Please draw a rectangle on the map.")
     except Exception as e:
@@ -103,6 +154,7 @@ if st.button("Search Available Imagery"):
 if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
     imagery_options = st.session_state["imagery_options"]
     aoi_geom = st.session_state["aoi_geom"]
+    config = st.session_state["sensor_config"]
     page_size = 10
     total_pages = (len(imagery_options) - 1) // page_size + 1
     current_page = st.session_state["current_page"]
@@ -126,14 +178,14 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
             col1, col2 = st.columns([1, 3])
             col1.write(f"ID: {img['id']}")
             col1.write(f"Date: {img['date']}")
-            
+
             # Generate a thumbnail for the imagery
             image = ee.Image(img["id"])
             thumbnail_url = image.getThumbURL({
                 "region": aoi_geom.getInfo(),
-                "bands": ["B4", "B3", "B2"],
-                "min": 0,
-                "max": 3000,
+                "bands": config["bands"],
+                "min": config["vis_params"].get("min"),
+                "max": config["vis_params"].get("max"),
                 "dimensions": "200x200",
             })
 
@@ -146,17 +198,9 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
             else:
                 col2.error("Failed to load preview.")
 
+            # Load imagery onto the map
             if st.button(f"Load {img['id']}", key=f"load_{img['id']}"):
                 try:
-                    # Visualization parameters
-                    vis_params = {
-                        "bands": ["B4", "B3", "B2"],
-                        "min": 0,
-                        "max": 3000,
-                        "gamma": 1.4,
-                    }
-
-                    # Add the selected imagery to the map
                     def add_ee_layer(self, ee_object, vis_params, name):
                         map_id_dict = ee.Image(ee_object).getMapId(vis_params)
                         folium.raster_layers.TileLayer(
@@ -168,24 +212,29 @@ if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:
                         ).add_to(self)
 
                     folium.Map.add_ee_layer = add_ee_layer
-                    folium_map.add_ee_layer(image, vis_params, f"Imagery {img['id']}")
+                    if "loaded_layers" not in st.session_state:
+                        st.session_state["loaded_layers"] = set()
+
+                    if img["id"] not in st.session_state["loaded_layers"]:
+                        folium_map.add_ee_layer(image, config["vis_params"], f"Imagery {img['id']}")
+                        st.session_state["loaded_layers"].add(img["id"])
 
                     st.session_state["folium_map"] = folium_map
-                    st.success("Imagery loaded successfully!")
-
+                    st.success(f"Imagery {img['id']} loaded onto the map!")
                 except Exception as e:
                     st.error(f"Error loading imagery: {e}")
 
-            # Add export option
+            # Export imagery
             if st.button(f"Export {img['id']}", key=f"export_{img['id']}"):
                 try:
                     task = ee.batch.Export.image.toDrive(
                         image=image,
-                        description=f"Export_{img['id']}",
+                        description=f"Export_{img['id'].replace('/', '_')[:100]}",
                         folder="GeoScope",
-                        fileNamePrefix=f"Image_{img['id']}",
-                        scale=10,
+                        fileNamePrefix=f"Image_{img['id'].replace('/', '_')[:100]}",
+                        scale=config["scale"],
                         region=aoi_geom.getInfo()["coordinates"],
+                        maxPixels=1e13,
                     )
                     task.start()
                     st.success(f"Export task for {img['id']} started! Check your Google Drive.")

@@ -129,7 +129,7 @@ if st.sidebar.button("New Search"):
     # Reset session state
     st.session_state.clear()
     st.session_state["folium_map"] = folium.Map(location=[37.5, -94.5], zoom_start=6)
-    st.experimental_rerun()
+    st.rerun()
 
 # Available imagery list
 available_imagery = []

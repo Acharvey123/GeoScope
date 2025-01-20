@@ -81,6 +81,7 @@ streamlit run main.py
 - Select date range you need imagery for, and the sensor you want to search for.
 - Click the "Search Available Imagery" button to retrieve and display satellite imagery for the selected area.
 - Browse through available imagery and select "Load Image" to view on map.
+- You can filter imagery by percent coverage of the AOI, as well as by capture date.
 - If satisfied, you can export the image to your Google Drive with the "Export" button. This may take a few minutes to show up in your drive, especially for large images.
 - To restart your search, you can click the "New Search" button.
 
@@ -96,4 +97,11 @@ deactivate
 
 - Ensure your `main.py` file contains the necessary logic for fetching and displaying Earth Engine data.
 - If you encounter any issues, verify that all dependencies are correctly installed and that you are authenticated with Google Earth Engine.
+- This app is still very much a WIP, so dont be surprised if you encounter any bugs.
 
+## TODO
+
+- Fix map zoom issues when loading layers / toggeling basemap (currently when adding a layer or selecting basemap the map zooms to default location, will fix to zoom to active layer)
+- Add support to toggle loaded imagery on and off
+- Add image processing options so you can view different indices (NDVI, NDWI etc.)
+- General UI improvements

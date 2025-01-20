@@ -1,5 +1,7 @@
 import ee
 
+import ee
+
 def sort_by_date(image_list):
     """
     Sort the list of imagery from oldest to newest based on the date metadata.
@@ -10,7 +12,21 @@ def sort_by_date(image_list):
     """
     return sorted(
         image_list,
-        key=lambda img: img["date"]  # Use the 'date' key directly
+        key=lambda img: img["date"],  # Use the 'date' key directly
+    )
+
+def sort_by_date_desc(image_list):
+    """
+    Sort the list of imagery from newest to oldest based on the date metadata.
+    Args:
+        image_list (list): List of image metadata dictionaries with a 'date' key.
+    Returns:
+        list: Sorted list of imagery.
+    """
+    return sorted(
+        image_list,
+        key=lambda img: img["date"],  # Use the 'date' key directly
+        reverse=True,  # Reverse order for newest to oldest
     )
 
 def calculate_aoi_coverage(image, aoi_geom):

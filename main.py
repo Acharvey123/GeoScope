@@ -8,7 +8,7 @@ from PIL import Image
 from io import BytesIO
 import requests
 from folium.plugins import Draw
-from image_filter import sort_by_date, sort_by_coverage
+from image_filter import sort_by_date, sort_by_date_desc, sort_by_coverage
 
 # Initialize session state variables
 if "sensor_config" not in st.session_state:
@@ -118,13 +118,26 @@ output = st_folium(
 
 # Add sorting buttons below the map
 col1, col2 = st.columns(2)  # Create two columns for the buttons
+
+# Sort Oldest to Newest
 with col1:
-    if st.button("Sort Imagery by Date"):
+    if st.button("Sort Oldest to Newest"):
         available_imagery = st.session_state.get("imagery_options", [])
         if available_imagery:
             sorted_by_date = sort_by_date(available_imagery)
             st.session_state["imagery_options"] = sorted_by_date
-            st.success("Imagery sorted by date (oldest to newest).")
+            st.success("Imagery sorted from oldest to newest.")
+        else:
+            st.error("No imagery available to sort. Please search for imagery first.")
+
+# Sort Newest to Oldest
+with col2:
+    if st.button("Sort Newest to Oldest"):
+        available_imagery = st.session_state.get("imagery_options", [])
+        if available_imagery:
+            sorted_by_date_desc = sort_by_date_desc(available_imagery)
+            st.session_state["imagery_options"] = sorted_by_date_desc
+            st.success("Imagery sorted from newest to oldest.")
         else:
             st.error("No imagery available to sort. Please search for imagery first.")
 

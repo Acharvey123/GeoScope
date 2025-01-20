@@ -10,6 +10,17 @@ import requests
 from folium.plugins import Draw
 from image_filter import sort_by_date, sort_by_coverage
 
+# Initialize session state variables
+if "sensor_config" not in st.session_state:
+    st.session_state["sensor_config"] = None
+if "aoi_geom" not in st.session_state:
+    st.session_state["aoi_geom"] = None
+if "imagery_options" not in st.session_state:
+    st.session_state["imagery_options"] = []
+if "loaded_layers" not in st.session_state:
+    st.session_state["loaded_layers"] = set()
+if "current_page" not in st.session_state:
+    st.session_state["current_page"] = 1  # Default to the first page
 
 # Initialize Earth Engine
 ee.Initialize()
@@ -105,6 +116,31 @@ output = st_folium(
     key="map",
 )
 
+# Add sorting buttons below the map
+col1, col2 = st.columns(2)  # Create two columns for the buttons
+with col1:
+    if st.button("Sort Imagery by Date"):
+        available_imagery = st.session_state.get("imagery_options", [])
+        if available_imagery:
+            sorted_by_date = sort_by_date(available_imagery)
+            st.session_state["imagery_options"] = sorted_by_date
+            st.success("Imagery sorted by date (oldest to newest).")
+        else:
+            st.error("No imagery available to sort. Please search for imagery first.")
+
+with col2:
+    if st.button("Sort Imagery by Coverage"):
+        if "aoi_geom" in st.session_state:
+            aoi_geom = st.session_state["aoi_geom"]
+            available_imagery = st.session_state.get("imagery_options", [])
+            if available_imagery:
+                sorted_by_coverage = sort_by_coverage(available_imagery, aoi_geom)
+                st.session_state["imagery_options"] = sorted_by_coverage
+                st.success("Imagery sorted by AOI coverage.")
+            else:
+                st.error("No imagery available to sort. Please search for imagery first.")
+        else:
+            st.error("Please draw an Area of Interest (AOI) first.")
 
 # Sidebar for date range and sensor selection
 st.sidebar.title("Date Range and Sensor Selection")
@@ -116,31 +152,6 @@ sensor = st.sidebar.selectbox(
     ["Sentinel-2", "Landsat", "MODIS", "NAIP", "Sentinel-1"],
     index=0,
 )
-
-# Sorting Options
-st.sidebar.title("Sorting Options")
-
-if st.sidebar.button("Sort Imagery by Date"):
-    available_imagery = st.session_state.get("imagery_options", [])
-    if available_imagery:
-        sorted_by_date = sort_by_date(available_imagery)
-        st.session_state["imagery_options"] = sorted_by_date
-        st.success("Imagery sorted by date (oldest to newest).")
-    else:
-        st.error("No imagery available to sort. Please search for imagery first.")
-
-if st.sidebar.button("Sort Imagery by Coverage"):
-    if "aoi_geom" in st.session_state:
-        aoi_geom = st.session_state["aoi_geom"]
-        available_imagery = st.session_state.get("imagery_options", [])
-        if available_imagery:
-            sorted_by_coverage = sort_by_coverage(available_imagery, aoi_geom)
-            st.session_state["imagery_options"] = sorted_by_coverage
-            st.success("Imagery sorted by AOI coverage.")
-        else:
-            st.error("No imagery available to sort. Please search for imagery first.")
-    else:
-        st.error("Please draw an Area of Interest (AOI) first.")
 
 # Sensor-specific configurations
 sensor_config = {
@@ -176,20 +187,14 @@ sensor_config = {
     },
 }
 
-# New Search Feature
-if st.sidebar.button("New Search"):
-    # Reset session state
-    st.session_state.clear()
-    st.session_state["folium_map"] = folium.Map(location=[37.5, -94.5], zoom_start=6)
-    st.rerun()
+# Set sensor_config in session state
+st.session_state["sensor_config"] = sensor_config[sensor]
 
-# Available imagery list
-available_imagery = []
-
-if st.button("Search Available Imagery"):
+# Search Available Imagery Button
+if st.sidebar.button("Search Available Imagery"):
     try:
         if "all_drawings" in output and output["all_drawings"]:
-            # Extract the rectangle GeoJSON
+            # Logic for searching imagery
             drawn_geojson = output["all_drawings"][-1]
             coords = drawn_geojson["geometry"]["coordinates"][0]
             min_lon, min_lat = coords[0]
@@ -214,7 +219,7 @@ if st.button("Search Available Imagery"):
                 .filterBounds(aoi_geom) \
                 .filterDate(str(start_date), str(end_date)) \
                 .select(config["bands"])
-            
+
             # Check if the collection is empty
             collection_size = image_collection.size().getInfo()
             if collection_size == 0:
@@ -227,13 +232,21 @@ if st.button("Search Available Imagery"):
                     for img in available_imagery
                 ]
                 st.session_state["imagery_options"] = image_list
-                st.session_state["current_page"] = 1
-                st.session_state["sensor_config"] = config
                 st.success("Imagery search complete!")
         else:
             st.error("No area of interest drawn. Please draw a rectangle on the map.")
     except Exception as e:
         st.error(f"Error fetching imagery: {e}")
+
+# New Search Feature
+if st.sidebar.button("New Search"):
+    # Reset session state
+    st.session_state.clear()
+    st.session_state["folium_map"] = folium.Map(location=[37.5, -94.5], zoom_start=6)
+    st.rerun()
+
+# Available imagery list
+available_imagery = []
 
 # Pagination controls and imagery preview
 if "imagery_options" in st.session_state and "aoi_geom" in st.session_state:

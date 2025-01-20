@@ -8,6 +8,8 @@ from PIL import Image
 from io import BytesIO
 import requests
 from folium.plugins import Draw
+from image_filter import sort_by_date, sort_by_coverage
+
 
 # Initialize Earth Engine
 ee.Initialize()
@@ -114,6 +116,31 @@ sensor = st.sidebar.selectbox(
     ["Sentinel-2", "Landsat", "MODIS", "NAIP", "Sentinel-1"],
     index=0,
 )
+
+# Sorting Options
+st.sidebar.title("Sorting Options")
+
+if st.sidebar.button("Sort Imagery by Date"):
+    available_imagery = st.session_state.get("imagery_options", [])
+    if available_imagery:
+        sorted_by_date = sort_by_date(available_imagery)
+        st.session_state["imagery_options"] = sorted_by_date
+        st.success("Imagery sorted by date (oldest to newest).")
+    else:
+        st.error("No imagery available to sort. Please search for imagery first.")
+
+if st.sidebar.button("Sort Imagery by Coverage"):
+    if "aoi_geom" in st.session_state:
+        aoi_geom = st.session_state["aoi_geom"]
+        available_imagery = st.session_state.get("imagery_options", [])
+        if available_imagery:
+            sorted_by_coverage = sort_by_coverage(available_imagery, aoi_geom)
+            st.session_state["imagery_options"] = sorted_by_coverage
+            st.success("Imagery sorted by AOI coverage.")
+        else:
+            st.error("No imagery available to sort. Please search for imagery first.")
+    else:
+        st.error("Please draw an Area of Interest (AOI) first.")
 
 # Sensor-specific configurations
 sensor_config = {
